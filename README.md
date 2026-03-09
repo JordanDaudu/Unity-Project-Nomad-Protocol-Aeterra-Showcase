@@ -1,5 +1,11 @@
 # Nomad Protocol: AETERRA — Showcase Repository (Unity / C#)
 
+🌐 **Project site / devlogs:** https://nomad-protocol-aeterra-website.onrender.com/  
+💼 **LinkedIn:** https://www.linkedin.com/in/jordan-daudu-cpp-python-java/  
+✉️ **Email:** jordandaudu@gmail.com  
+
+---
+
 This repository is a **public showcase version** of my Unity project **Nomad Protocol: AETERRA**.
 
 It intentionally contains **only curated, safe-to-share content** (primarily **C# scripts** and **documentation/devlogs**) and does **not** include the full Unity project, art/audio assets, scenes, prefabs, or other files that would allow cloning and running the complete game.
@@ -65,15 +71,6 @@ The public repo is maintained via a **sync script** from the private project tha
 - can optionally mirror the destination to avoid stale files
 
 This ensures the showcase stays up-to-date without exposing non-public content.
-
----
-
-## Contact / Demo
-
-If you’d like a **private build/demo** or want to discuss the architecture decisions, feel free to reach out:
-
-- LinkedIn: <https://www.linkedin.com/in/jordan-daudu-cpp-python-java/>
-- Email: <jordandaudu@gmail.com>
 
 ---
 
