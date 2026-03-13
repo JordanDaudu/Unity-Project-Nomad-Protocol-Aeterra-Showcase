@@ -4,7 +4,7 @@ using UnityEngine;
 /// Patrol movement state.
 /// 
 /// Behavior:
-/// - Sets NavMeshAgent speed to <see cref="Enemy.moveSpeed"/>.
+/// - Sets NavMeshAgent speed to <see cref="Enemy.walkSpeed"/>.
 /// - Moves to the next patrol point (see <see cref="Enemy.GetPatrolDestination"/>).
 /// - When destination is reached, transitions back to <see cref="IdleState_Melee"/>.
 /// </summary>
@@ -21,7 +21,7 @@ public class MoveState_Melee : EnemyState
     {
         base.Enter();
 
-        enemy.agent.speed = enemy.moveSpeed;
+        enemy.agent.speed = enemy.walkSpeed;
 
         destination = enemy.GetPatrolDestination();
         enemy.agent.SetDestination(destination);

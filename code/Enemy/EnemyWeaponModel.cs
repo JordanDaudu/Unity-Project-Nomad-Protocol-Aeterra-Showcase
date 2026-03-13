@@ -35,6 +35,15 @@ public abstract class EnemyWeaponModel : MonoBehaviour
     /// </summary>
     public virtual int AnimationLayerIndex => 0;
 
+    // Whether this weapon setup needs left-hand IK positioning.
+    // Default is false because not every weapon uses an off-hand pose.
+    public virtual bool RequiresLeftHandIK => false;
+
+    // Optional IK targets provided by specific weapon models.
+    // Base class returns null because many weapons do not need them.
+    public virtual Transform LeftHandTarget => null;
+    public virtual Transform LeftElbowTarget => null;
+
     /// <summary>
     /// Determines whether this weapon model is compatible with the specified enemy.
     /// </summary>

@@ -1,19 +1,19 @@
 using UnityEngine;
 
 /// <summary>
-/// Pooled projectile that travels forward, fades its trail near max distance,
-/// and returns itself to <see cref="ObjectPool"/>.
-/// 
-/// Responsibilities:
-/// - Manage its own lifetime using max fly distance
-/// - Disable collider/mesh when max distance is reached (trail can finish fading)
-/// - Spawn pooled impact FX on collision
-/// 
-/// Notes:
-/// - Bullet instances are expected to be spawned via <see cref="ObjectPool"/>.
-/// - The bullet uses TrailRenderer.time as a simple "fade-out timer" and returns to pool when it reaches < 0.
-/// - On hit, looks for <see cref="Enemy"/> and optional <see cref="EnemyShield"/> in the collider hierarchy.
+/// Pooled projectile.
 /// </summary>
+/// <remarks>
+/// Responsibilities:
+/// <list type="bullet">
+/// <item><description>Track travel distance and disable visuals/collision after reaching max distance.</description></item>
+/// <item><description>Fade its trail near end-of-life for a smoother disappearance.</description></item>
+/// <item><description>Spawn pooled impact FX on collision and return itself to <see cref="ObjectPool"/>.</description></item>
+/// </list>
+/// 
+/// Pooling note:
+/// - This component is designed to be reused; <see cref="BulletSetup"/> must be called after spawning.
+/// </remarks>
 public class Bullet : MonoBehaviour
 {
     #region Inspector
@@ -61,7 +61,7 @@ public class Bullet : MonoBehaviour
     {
         // Always spawn impact FX and return the bullet to the pool.
         // Note: Return is delayed in ObjectPool (default 0.001f), so we can still run hit logic below.
-        CreateImpactFx(collision);
+        CreateImpactFx();
         ReturnBulletToPool();
 
         // Shield is checked on the exact hit collider (shield can be a separate child object).
@@ -92,12 +92,10 @@ public class Bullet : MonoBehaviour
     #region Public API
 
     /// <summary>
-    /// Called right after the bullet is spawned from the pool.
-    /// Resets runtime state for reuse.
+    /// Must be called immediately after spawning this bullet from the pool.
+    /// Resets runtime state so the bullet behaves correctly when reused.
     /// </summary>
-    /// <param name="flyDistance">
-    /// Maximum travel distance before the bullet disables itself and starts fading out.
-    /// </param>
+    /// <param name="flyDistance">Max travel distance before disabling mesh/collider.</param>
     public void BulletSetup(float flyDistance = 100f, float impactForce = 100f)
     {
         this.impactForce = impactForce;
@@ -109,6 +107,7 @@ public class Bullet : MonoBehaviour
         meshRenderer.enabled = true;
 
         // Reset trail life so the bullet starts with a visible trail.
+        trailRenderer.Clear();
         trailRenderer.time = .5f;
 
         startPosition = transform.position;
@@ -153,19 +152,13 @@ public class Bullet : MonoBehaviour
 
     protected void ReturnBulletToPool() => ObjectPool.Instance.ReturnObjectToPool(gameObject);
 
-    protected void CreateImpactFx(Collision collision)
+    protected void CreateImpactFx()
     {
-        if (collision.contacts.Length > 0)
-        {
-            ContactPoint contact = collision.contacts[0];
+        // Impact FX is also pooled to avoid instantiations during shooting.
+        GameObject newImpactFx = ObjectPool.Instance.GetObject(bulletImpactFX, transform);
 
-            // Impact FX is also pooled to avoid instantiations during shooting.
-            GameObject newImpactFx = ObjectPool.Instance.GetObject(bulletImpactFX);
-            newImpactFx.transform.position = contact.point;
-
-            // Delay-return to allow the FX to play.
-            ObjectPool.Instance.ReturnObjectToPool(newImpactFx, 1f);
-        }
+        // Delay-return to allow the FX to play.
+        ObjectPool.Instance.ReturnObjectToPool(newImpactFx, 1f);
     }
 
     #endregion

@@ -13,6 +13,8 @@ using UnityEngine;
 /// </summary>
 public class Player : MonoBehaviour
 {
+    public Transform playerBody;
+
     #region Public Properties
 
     public InputSystem_Actions controls { get; private set; }

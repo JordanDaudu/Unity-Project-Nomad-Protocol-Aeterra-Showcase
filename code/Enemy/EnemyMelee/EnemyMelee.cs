@@ -64,6 +64,7 @@ public class EnemyMelee : Enemy
     [SerializeField] public EnemyMeleeWeaponType weaponType;
     [SerializeField] private EnemyShield enemyShield;
 
+    [Header("Dodge Settings")]
     [Tooltip("Cooldown after a dodge animation completes. Negative allows immediate dodge at start.")]
     [SerializeField] private float dodgeCooldown;
     private float lastTimeDodged = -10f;
@@ -142,7 +143,7 @@ public class EnemyMelee : Enemy
     {
         base.GetHit();
 
-        if (currentHealth <= 0)
+        if (currentHealth <= 0 && stateMachine.currentState != deadState)
             stateMachine.ChangeState(deadState);
     }
 
@@ -185,9 +186,12 @@ public class EnemyMelee : Enemy
         return true;
     }
 
-    public void EnableWeaponModel(bool active)
+    public void ThrowAxe()
     {
-        visuals.currentWeaponModel.gameObject.SetActive(active);
+        // Axe is pooled and configured to track the player for a short duration.
+        GameObject newAxe = ObjectPool.Instance.GetObject(axePrefab, axeStartPoint);
+
+        newAxe.GetComponent<EnemyAxe>().AxeSetup(axeFlySpeed, player, axeAimTimer);
     }
 
     public override void AbilityTrigger()
@@ -195,10 +199,10 @@ public class EnemyMelee : Enemy
         base.AbilityTrigger();
 
         // Slow the enemy slightly while performing ability follow-up / recovery window.
-        moveSpeed = moveSpeed * 0.6f;
+        walkSpeed = walkSpeed * 0.6f;
 
         // Slow the enemy slightly while performing ability follow-up / recovery window.
-        EnableWeaponModel(false);
+        visuals.EnableWeaponModel(false);
     }
 
     public void UpdateAttackData()
@@ -212,7 +216,7 @@ public class EnemyMelee : Enemy
         }
     }
 
-    private void InitializeSpeciality()
+    protected override void InitializeSpeciality()
     {
         AxeThrowInitialization();
         shieldInitialization();
@@ -252,23 +256,9 @@ public class EnemyMelee : Enemy
         lastTimeAxeThrown -= axeThrowCooldown;
     }
 
-    private float GetAnimationClipDuration(string clipName)
+    protected override void OnDrawGizmosSelected()
     {
-        AnimationClip[] clips = anim.runtimeAnimatorController.animationClips;
-
-        foreach (AnimationClip clip in clips)
-        {
-            if (clip.name == clipName)
-                return clip.length;
-        }
-
-        Debug.LogWarning($"Animation clip with name {clipName} not found on {name}", this);
-        return 0f;
-    }
-
-    protected override void OnDrawGizmos()
-    {
-        base.OnDrawGizmos();
+        base.OnDrawGizmosSelected();
 
         Gizmos.color = Color.yellow;
         Gizmos.DrawWireSphere(transform.position, attackData.attackRange);

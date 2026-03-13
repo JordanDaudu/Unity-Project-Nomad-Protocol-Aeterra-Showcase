@@ -19,6 +19,7 @@ public class IdleState_Melee : EnemyState
     {
         base.Enter();
 
+        enemy.agent.velocity = Vector3.zero;
         stateTimer = enemyBase.idleTime;
     }
 

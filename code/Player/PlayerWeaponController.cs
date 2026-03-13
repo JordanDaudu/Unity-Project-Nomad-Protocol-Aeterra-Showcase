@@ -145,7 +145,7 @@ public class PlayerWeaponController : MonoBehaviour
     private void CreateWeaponOnTheGround()
     {
         // Dropped weapon is a pooled pickup that stores this runtime Weapon instance (ammo/state preserved).
-        GameObject droppedWeapon = ObjectPool.Instance.GetObject(weaponPickupPrefab);
+        GameObject droppedWeapon = ObjectPool.Instance.GetObject(weaponPickupPrefab, transform);
         droppedWeapon.GetComponent<PickupWeapon>()?.SetupPickupWeapon(currentWeapon, transform);
     }
 
@@ -201,8 +201,7 @@ public class PlayerWeaponController : MonoBehaviour
     {
         currentWeapon.bulletsInMagazine--;
 
-        GameObject newBullet = ObjectPool.Instance.GetObject(bulletPrefab);
-        newBullet.transform.position = GunPoint().position;
+        GameObject newBullet = ObjectPool.Instance.GetObject(bulletPrefab, GunPoint());
         newBullet.transform.rotation = Quaternion.LookRotation(GunPoint().forward);
 
         Rigidbody rbNewBullet = newBullet.GetComponent<Rigidbody>();

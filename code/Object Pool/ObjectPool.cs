@@ -3,18 +3,21 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Simple generic prefab-based object pool.
-/// 
-/// Responsibilities:
-/// - Keep a Queue per prefab type
-/// - Provide pooled instances via <see cref="GetObject"/>
-/// - Return objects via <see cref="ReturnObjectToPool"/> (supports delayed return)
-/// 
-/// Notes:
-/// - Pooled instances receive a <see cref="PooledObject"/> component at creation time.
-///   That component stores the original prefab key so the pool knows which queue to return to.
-/// - This pool is scene-persistent (DontDestroyOnLoad) so pooled objects can be reused across scenes.
+/// Simple prefab-based object pool.
 /// </summary>
+/// <remarks>
+/// Responsibilities:
+/// <list type="bullet">
+/// <item><description>Maintain a <see cref="Queue{T}"/> per prefab type.</description></item>
+/// <item><description>Provide pooled instances via <see cref="GetObject"/>.</description></item>
+/// <item><description>Return instances via <see cref="ReturnObjectToPool"/> (supports delayed return).</description></item>
+/// </list>
+/// 
+/// Pool keying:
+/// - Each instance gets a <see cref="PooledObject"/> component storing its original prefab reference.
+/// - This allows returning to the correct queue even when multiple prefabs are pooled.
+/// - This pool is scene-persistent (DontDestroyOnLoad) so pooled objects can be reused across scenes.
+/// </remarks>
 public class ObjectPool : MonoBehaviour
 {
     public static ObjectPool Instance { get; private set; }
@@ -64,7 +67,7 @@ public class ObjectPool : MonoBehaviour
     /// Gets a pooled instance for the requested prefab.
     /// Creates a new pool on demand if needed.
     /// </summary>
-    public GameObject GetObject(GameObject prefab)
+    public GameObject GetObject(GameObject prefab, Transform target)
     {
         if (poolDictionary.ContainsKey(prefab) == false)
             initializeNewPool(prefab);
@@ -78,8 +81,9 @@ public class ObjectPool : MonoBehaviour
         }
 
         GameObject objectToGet = poolDictionary[prefab].Dequeue();
-        objectToGet.SetActive(true); // Activate the object before returning it
+        objectToGet.transform.position = target.position; // Position the object at the target location
         objectToGet.transform.SetParent(null); // Detach from pool parent for normal world usage.
+        objectToGet.SetActive(true); // Activate the object before returning it
 
         if (objectToGet.TryGetComponent<IPoolable>(out var poolable))
             poolable.OnSpawnedFromPool(); // Let the object reset itself if it implements IPoolable

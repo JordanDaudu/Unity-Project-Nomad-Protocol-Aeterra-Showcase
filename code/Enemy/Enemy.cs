@@ -18,11 +18,15 @@ using System.Collections;
 /// - <see cref="Bullet"/> calls <see cref="GetHit"/> and <see cref="DeathImpact"/>.
 /// - Death visuals are composed via <see cref="EnemyRagdoll"/> + <see cref="EnemyDeathDissolve"/>.
 /// </summary>
+[RequireComponent(typeof(EnemyPerception))]
 public class Enemy : MonoBehaviour, IPoolable
 {
     #region Health
 
+    [Tooltip("Maximum health this enemy has when fully alive.")]
     [SerializeField] protected int maxHealth = 20;
+
+    [Tooltip("Current runtime health. Useful for debugging in play mode.")]
     [SerializeField] protected int currentHealth;
 
     #endregion
@@ -30,18 +34,29 @@ public class Enemy : MonoBehaviour, IPoolable
     #region AI Tuning
 
     [Header("Idle data")]
+
+    [Tooltip("How long the enemy stays idle before choosing its next non-combat action, such as patrolling.")]
     public float idleTime;
-    public float aggressionRange;
+
+    [Tooltip("Combat distance threshold. If the player is farther than this, the enemy may stop holding its current combat position and advance instead.")]
+    public float combatRange;
 
     [Header("Move data")]
-    public float moveSpeed;
-    public float chaseSpeed;
+
+    [Tooltip("Movement speed used for slow navigation, usually patrol, search, or cautious movement.")]
+    public float walkSpeed = 1.5f;
+
+    [Tooltip("Movement speed used for fast navigation, usually chasing or running to cover.")]
+    public float runSpeed = 3f;
+
+    [Tooltip("How quickly the enemy rotates toward a target on the Y axis. Higher values turn faster.")]
     public float turnSpeed;
 
     #endregion
 
     #region Patrol
 
+    [Tooltip("Patrol points visited in order while the enemy is out of combat. These transforms are hidden at runtime after their positions are cached.")]
     [SerializeField] private Transform[] patrolPoints;
     private Vector3[] patrolPointsPosition;
     private int currentPatrolIndex;
@@ -62,6 +77,7 @@ public class Enemy : MonoBehaviour, IPoolable
     public Animator anim { get; private set; }
     public NavMeshAgent agent { get; private set; }
     public EnemyStateMachine stateMachine { get; private set; }
+    public EnemyPerception perception { get; private set; }
 
     [Header("Enemy Visuals")]
     public EnemyVisuals visuals { get; private set; }
@@ -94,21 +110,29 @@ public class Enemy : MonoBehaviour, IPoolable
 
         ragdoll = GetComponent<EnemyRagdoll>();
         deathDissolve = GetComponent<EnemyDeathDissolve>();
-
         visuals = GetComponent<EnemyVisuals>();
+        perception = GetComponent<EnemyPerception>();
     }
 
     protected virtual void Start()
     {
         InitializePatrolPoints();
+        perception?.SetTarget(player);
     }
 
     protected virtual void Update()
     {
+        perception?.TickPerception(inBattleMode);
+
         // Base enemy does not tick the state machine directly.
         // Subclasses (EnemyMelee, etc.) call: stateMachine.currentState.Update();
         if (ShouldEnterBattleMode())
             EnterBattleMode();
+    }
+
+    protected virtual void InitializeSpeciality()
+    {
+        // Optional override for specific enemy types to initialize speciality
     }
 
     #endregion
@@ -120,15 +144,13 @@ public class Enemy : MonoBehaviour, IPoolable
     /// </summary>
     protected bool ShouldEnterBattleMode()
     {
-        bool inAggresionRange = Vector3.Distance(transform.position, player.position) < aggressionRange;
+        if (inBattleMode)
+            return false;
 
-        if (inAggresionRange && !inBattleMode)
-        {
-            EnterBattleMode();
-            return true;
-        }
+        if (perception != null)
+            return perception.IsTargetVisible;
 
-        return false;
+        return IsPlayerInCombatRange();
     }
 
     public virtual void EnterBattleMode()
@@ -136,11 +158,28 @@ public class Enemy : MonoBehaviour, IPoolable
         inBattleMode = true;
     }
 
+    public virtual void ExitBattleMode()
+    {
+        inBattleMode = false;
+    }
+
     /// <summary>
     /// Called when the enemy is hit by a bullet.
+    /// Refreshes target memory so the enemy can properly re-engage the attacker.
     /// </summary>
     public virtual void GetHit()
     {
+        if (perception != null && player != null)
+        {
+            Vector3 knownThreatPosition = player.position;
+
+            Player playerComponent = player.GetComponent<Player>();
+            if (playerComponent != null && playerComponent.playerBody != null)
+                knownThreatPosition = playerComponent.playerBody.position;
+
+            perception.RegisterTargetKnowledge(knownThreatPosition);
+        }
+
         EnterBattleMode();
         currentHealth--;
     }
@@ -160,12 +199,42 @@ public class Enemy : MonoBehaviour, IPoolable
         rb.AddForceAtPosition(force, hitPoint, ForceMode.Impulse);
     }
 
+    public bool IsPlayerInCombatRange() => Vector3.Distance(transform.position, player.position) < combatRange;
+    public bool CanSeePlayer() => perception != null ? perception.IsTargetVisible : IsPlayerInCombatRange();
+    public bool HasRecentTargetKnowledge() => perception == null || perception.HasTargetKnowledge;
+
+    public Vector3 GetKnownPlayerPosition()
+    {
+        if (perception != null && perception.HadVisualContact)
+            return perception.KnownTargetPosition;
+
+        return player.position;
+    }
+
+    public void StopAgentImmediately()
+    {
+        if (agent == null)
+            return;
+
+        agent.isStopped = true;
+        agent.velocity = Vector3.zero;
+
+        if (agent.isOnNavMesh)
+            agent.ResetPath();
+    }
+
     #endregion
 
     #region Facing Helpers
 
-    private void FaceTarget(Vector3 target)
+    public void FaceTarget(Vector3 target)
     {
+        Vector3 direction = target - transform.position;
+        direction.y = 0f; // keep only horizontal rotation
+
+        if (direction.sqrMagnitude < 0.0001f)
+            return;
+
         Quaternion targetRotation = Quaternion.LookRotation(target - transform.position);
 
         Vector3 currentEulerAngles = transform.rotation.eulerAngles;
@@ -175,9 +244,19 @@ public class Enemy : MonoBehaviour, IPoolable
         transform.rotation = Quaternion.Euler(currentEulerAngles.x, yRotation, currentEulerAngles.z);
     }
 
-    public void FaceSteeringTarget() => FaceTarget(agent.steeringTarget);
+    public void FaceSteeringTarget()
+    {
+        if (agent == null || !agent.enabled || !agent.isOnNavMesh)
+            return;
+
+        if (agent.pathPending || !agent.hasPath)
+            return;
+
+        FaceTarget(agent.steeringTarget);
+    }
 
     public void FacePlayer() => FaceTarget(player.position);
+    public void FaceKnownPlayerPosition() => FaceTarget(GetKnownPlayerPosition());
 
     #endregion
 
@@ -270,6 +349,20 @@ public class Enemy : MonoBehaviour, IPoolable
 
     public virtual void AbilityTrigger() => stateMachine.currentState.AbilityTrigger();
 
+    protected float GetAnimationClipDuration(string clipName)
+    {
+        AnimationClip[] clips = anim.runtimeAnimatorController.animationClips;
+
+        foreach (AnimationClip clip in clips)
+        {
+            if (clip.name == clipName)
+                return clip.length;
+        }
+
+        Debug.LogWarning($"Animation clip with name {clipName} not found on {name}", this);
+        return 0f;
+    }
+
     #endregion
 
     #region Patrol logic
@@ -298,9 +391,10 @@ public class Enemy : MonoBehaviour, IPoolable
     #endregion
 
     #region Debug Gizmos
-    protected virtual void OnDrawGizmos()
+    protected virtual void OnDrawGizmosSelected()
     {
-        Gizmos.DrawWireSphere(transform.position, aggressionRange);
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawWireSphere(transform.position, combatRange);
     }
 
     #endregion
