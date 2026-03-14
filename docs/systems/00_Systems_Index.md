@@ -4,22 +4,22 @@ summary: "Architecture documentation for the implemented Unity gameplay systems.
 order: 0
 status: "In Development"
 tags: ["Systems", "Documentation"]
-last_updated: "2026-03-05"
+last_updated: "2026-03-14"
 ---
 
-This section documents **the systems that actually exist in the codebase** as of **2026-03-05**.
+This section documents **the systems that actually exist in the codebase** as of **2026-03-14**.
 
 ## 🗂 Index
 ## 🔎 Documentation
-- [Doc Conventions](./01_Doc_Conventions.md)
-- [Scripts → Systems Map](./02_Scripts_To_Systems_Map.md)
+- [Doc Conventions](./%23Documentation/01_Doc_Conventions.md)
+- [Scripts → Systems Map](./%23Documentation/02_Scripts_To_Systems_Map.md)
 
 ### Combat
 - [Weapons Data (ScriptableObjects)](./Combat/30_Weapons_Data_ScriptableObjects.md)
 - [Weapon Runtime Model](./Combat/31_Weapon_Runtime_Model.md)
 - [Player Weapon Controller](./Combat/32_Player_Weapon_Controller.md)
 - [Weapon Visuals, Rigging & Animation Events](./Combat/33_Weapon_Visuals_Rigging_AnimationEvents.md)
-- [Projectiles: Bullet & Impact FX](./Combat/34_Projectiles_Bullet_ImpactFX.md)
+- [Projectiles: Bullet, EnemyBullet & Impact FX](./Combat/34_Projectiles_Bullet_ImpactFX.md)
 
 ### Core
 - [Object Pooling](./Core/10_Object_Pooling.md)
@@ -43,6 +43,9 @@ This section documents **the systems that actually exist in the codebase** as of
 - [Enemy Visuals & Variant Pipeline](./Enemy/54_Enemy_Visuals_and_Variants.md)
 - [Enemy Death Pipeline](./Enemy/55_Enemy_Death_Pipeline.md)
 - [Enemy Shield & Reactions](./Enemy/56_Enemy_Shield_and_Reactions.md)
+- [Enemy Perception System](./Enemy/57_Enemy_Perception_System.md)
+- [Cover System](./Enemy/58_Cover_System.md)
+- [Enemy Range Perks & Abilities](./Enemy/59_Enemy_Range_Perks_and_Abilities.md)
 
 ## ✅ Scope Rule
 These docs describe **implemented systems only**. Future features (new enemy archetypes, missions, etc.) are referenced only as *extension points*.

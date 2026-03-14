@@ -37,6 +37,7 @@ public class ThrowGrenadeState_Range : EnemyState
     public ThrowGrenadeState_Range(Enemy enemyBase, EnemyStateMachine stateMachine, string animBoolName) : base(enemyBase, stateMachine, animBoolName)
     {
         enemy = enemyBase as EnemyRange;
+        finishedThrowingGrenade = true; // Default to true so that if the enemy dies before throwing, it won't try to throw on death.
     }
 
     #endregion

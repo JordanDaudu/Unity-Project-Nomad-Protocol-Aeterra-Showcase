@@ -1,10 +1,10 @@
 ---
 title: "Enemy Death Pipeline"
-summary: "Death sequence combining NavMesh disable, ragdoll physics, hit impulse, dissolve visuals, and pool-safe reset."
+summary: "Death sequence combining NavMesh/Animator disable, ragdoll physics, hit impulse, dissolve visuals, interaction shutdown, and pool-safe reset (supports melee + ranged edge cases)."
 order: 55
 status: "In Development"
 tags: ["Enemy", "Death", "Ragdoll", "VFX", "Pooling"]
-last_updated: "2026-03-05"
+last_updated: "2026-03-14"
 ---
 
 ## 🧭 Overview
@@ -13,80 +13,88 @@ Enemy death is treated as a controlled sequence:
 - Enable ragdoll physics
 - Apply hit impulse at impact point
 - Run dissolve shader sequence
-- Freeze/cleanup for performance
-- Reset to alive state when reused from pool
+- Disable colliders/interactions after a short delay (performance + stability)
+- Reset to alive state when reused from the pool
 
-This is implemented as composed components rather than monolithic logic.
+This is implemented via composed components + an FSM “dead state”, rather than monolithic logic.
 
 ## 🎯 Purpose
 Provide strong combat feedback (impact + visuals) while remaining stable under pooling.
 
 ## 🧠 Design Philosophy
-- **Death is a pipeline**: predictable order prevents partial/broken states.
-- **Pool-safe reset**: all toggles/material swaps must be reversible.
-- **Performance-aware**: dissolve via property blocks, pooled FX, and freezing ragdolls after a delay.
+- **Death is a pipeline**: predictable ordering prevents partial/broken states.
+- **Pool-safe reset**: all toggles/material swaps must be reversible on respawn.
+- **Separate visuals from rules**: `EnemyDeathDissolve` owns shader control; states own timing and cleanup.
+- **Handle archetype edge cases**: ranged grenade throw must not “vanish” if the enemy dies mid-animation.
 
 ## 📦 Core Responsibilities
 **Does**
-- Provide a consistent death sequence for enemy archetypes
-- Apply hit force to ragdoll rigidbody at contact point
-- Swap materials to dissolve variants and animate dissolve value
-- Provide `ResetForReuse()` so pooled enemies can respawn cleanly
+- Transition into a dead state when health reaches 0
+- Disable `NavMeshAgent` and `Animator` so ragdoll owns the body
+- Enable ragdoll and apply delayed hit impulse (`Enemy.DeathImpact`)
+- Trigger dissolve sequence (`EnemyDeathDissolve.PlayDeathDissolve()`)
+- Disable ragdoll colliders after a short delay (avoids ongoing bullet/physics interactions)
+- Provide pool reset hooks to restore the enemy to a clean alive baseline
 
 **Does NOT**
-- Decide *when* an enemy dies (health logic lives in `Enemy` + archetypes)
+- Decide when an enemy *should* die (health logic decides)
+- Destroy objects (pooling is preferred)
 
 ## 🧱 Key Components
-Classes
-- `EnemyRagdoll` (`code/Enemy/EnemyRagdoll.cs`)
-  - Toggles rigidbodies/colliders
-- `EnemyDeathDissolve` (`code/Enemy/EnemyDeathDissolve.cs`)
-  - Builds dissolve targets, swaps materials, animates dissolve, resets materials
-- `Enemy` (`code/Enemy/Enemy.cs`)
-  - Disables agent/anim, triggers ragdoll/dissolve reset on pool reuse
+States
+- `DeadState_Melee` / `DeadState_Range`
+    - Archetype-specific entry logic and cleanup timing
 
-Integration
-- `Bullet` applies:
-  - `Enemy.GetHit()`
-  - `Enemy.DeathImpact(force, hitPoint, hitRigidBody)`
+Presentation components
+- `EnemyRagdoll`
+    - Toggles rigidbodies/colliders/animation control
+- `EnemyDeathDissolve`
+    - Builds dissolve target list and drives dissolve shader parameters
+
+Shared helper
+- `Enemy.DeathImpact(...)`
+    - Applies a delayed `AddForceAtPosition` so ragdoll settles before impulse
 
 ## 🔄 Execution Flow
-1. Enemy reaches death condition (archetype/state)
-2. Dead state begins
-   - Disable `NavMeshAgent`
-   - Disable animator
-   - Enable ragdoll (`EnemyRagdoll.RagdollActive(true)`)
-3. Bullet impact
-   - Bullet passes impulse direction/magnitude
-   - Enemy applies force after a short delay (`DeathImpact()` coroutine)
-4. Dissolve
-   - `EnemyDeathDissolve` swaps to dissolve-compatible materials
-   - Dissolve value animates over time
-5. Post-death cleanup
-   - Ragdoll can be frozen / colliders disabled to reduce physics cost
-6. Pool reuse
-   - `Enemy.OnSpawnedFromPool()` calls `ResetEnemyForReuse()`
-   - Restores components
-   - Calls `EnemyDeathDissolve.ResetForReuse()`
+1. **Hit**
+    - `Bullet` hits enemy → calls `Enemy.GetHit()` (and shield logic if present)
+
+2. **Health reaches 0**
+    - Archetype transitions its FSM into `DeadState_*`
+
+3. **Dead state enter**
+    - Disable `Animator` + `NavMeshAgent`
+    - Enable ragdoll
+    - Start dissolve effect
+    - Start a timer to disable ragdoll colliders after ~1.5s
+
+4. **Archetype-specific edge cases**
+    - **Ranged**: `DeadState_Range` forces `EnemyRange.ThrowGrenade()` if the enemy died mid-throw
+        - This prevents the grenade animation from consuming the ability without spawning the grenade.
+
+5. **Pool reuse**
+    - `OnSpawnedFromPool()` restores:
+        - health
+        - battle mode flags
+        - agent + animator enabled state
+        - ragdoll colliders off / kinematic
+        - dissolve materials reset
 
 ## 🔗 Dependencies
-**Depends On**
-- Unity physics (`Rigidbody`, colliders)
-- Material/shader properties (dissolve support)
+Depends On
+- Unity physics + Animator + NavMesh
+- Correct dissolve shader setup on all dissolve targets
 
-**Used By**
-- Melee + ranged archetypes (death state)
+Used By
+- `EnemyMelee`, `EnemyRange`
 
 ## ⚠ Constraints & Assumptions
-- Dissolve only works on renderers/materials that expose the expected dissolve property.
-- Bullet hit uses `collision.collider.attachedRigidbody` which must exist for ragdoll bones.
+- Dissolve only affects renderers using a compatible shader (missing dissolve shader will be logged by `EnemyDeathDissolve`).
+- Ragdoll colliders are disabled after death to prevent extra hits/forces while pooled objects remain in the world.
 
 ## 📈 Scalability & Extensibility
-- Add different death VFX sequences per archetype by extending dead states while keeping reset contract.
-- Add pooling-friendly blood decals/impact FX (already compatible with pooled approach).
+- Add new archetype-specific death edge cases inside the archetype’s dead state, without changing ragdoll/dissolve components.
+- Death visuals can evolve independently (e.g., different dissolve profiles per enemy type).
 
 ## ✅ Development Status
 In Development
-
-## 📝 Notes
-- Devlog 09 introduced the ragdoll → dissolve pipeline and pool-safe reset goals.

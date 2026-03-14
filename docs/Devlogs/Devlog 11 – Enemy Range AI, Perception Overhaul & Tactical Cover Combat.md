@@ -211,6 +211,29 @@ This also makes balancing easier because enemy weapons can be tuned using simila
 
 ---
 
+### 🛡️ UnstoppablePerk
+
+The **Unstoppable** perk changes how a ranged enemy handles pressure and positioning.
+
+Normally, ranged enemies stop advancing once they reach a valid combat range and have a clear line of sight to the player.
+
+An enemy with **Unstoppable** behaves more aggressively:
+- It does not rely on the normal combat range checks to stop advancing
+- It tends to **slowly push toward the player instead of holding defensive positions**
+- It may still interact with cover if cover behavior is also enabled
+- It will **maintain pressure even under fire**
+- It typically has **higher health pools** to support this aggressive role
+
+This creates a different combat dynamic compared to standard ranged enemies:
+
+- **Cover shooters** → defensive ranged pressure  
+- **Grenadiers** → area denial and forced movement  
+- **Unstoppable enemies** → slow, relentless forward pressure
+
+This variation allows encounters to mix different ranged enemy roles while still using the same core AI architecture.
+
+---
+
 ### 💣 Grenade System
 Added grenade logic for ranged enemies with the `GrenadePerk`.
 
@@ -226,7 +249,7 @@ This gives ranged enemies area denial and pressure tools without making grenades
 
 ---
 
-### 🧬 Enemy Range Perks
+### 🧬 Enemy Range Behavior Perks
 Enemy Range now supports three behavioral perks:
 
 #### CoverPerk
@@ -322,8 +345,8 @@ This is one of the biggest AI milestones in the project so far.
 ---
 
 ## ➡ Next Steps
-- Polish and expand **Enemy Range** behaviors
-- Tune perception, cover scoring, and battle flow
-- Improve ranged combat readability and fairness
-- Build additional ranged enemy variants using the new perk system
-- Continue refining AI architecture for future enemy archetypes
+- Build a new major enemy archetype: **Enemy Boss**
+- Set up the boss model, rig, and animation pipeline
+- Design a dedicated boss state machine
+- Implement boss-specific abilities and attack patterns
+- Build the full gameplay/visual combat loop for the boss encounter

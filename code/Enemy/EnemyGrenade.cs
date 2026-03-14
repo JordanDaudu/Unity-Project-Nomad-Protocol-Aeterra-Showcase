@@ -128,14 +128,11 @@ public class EnemyGrenade : MonoBehaviour
 
         foreach (Collider hit in colliders)
         {
-            if (hit.CompareTag("Player"))
-            {
-                Rigidbody rb = hit.GetComponent<Rigidbody>();
+            Rigidbody rb = hit.GetComponent<Rigidbody>();
 
-                if (rb != null)
-                {
-                    rb.AddExplosionForce(impactPower, transform.position, explosionRadius, upwardsMultiplier, ForceMode.Impulse);
-                }
+            if (rb != null)
+            {
+                rb.AddExplosionForce(impactPower, transform.position, explosionRadius, upwardsMultiplier, ForceMode.Impulse);
             }
         }
     }

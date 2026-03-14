@@ -1,79 +1,79 @@
 ---
 title: "Enemy State Machine"
-summary: "Reusable finite state machine used by enemies. States control decisions, animation sync, and ability timing."
+summary: "Reusable finite state machine used by enemies. States are pure behavior units; the machine owns the active state lifecycle."
 order: 51
-status: "Stable"
-tags: ["Enemy", "AI", "FSM"]
-last_updated: "2026-03-05"
+status: "In Development"
+tags: ["Enemy", "AI", "State Machine"]
+last_updated: "2026-03-14"
 ---
 
 ## 🧭 Overview
-Enemies run their behavior through a finite state machine (FSM):
-- `EnemyStateMachine` holds the active state
-- `EnemyState` defines a shared lifecycle and timing hooks
-- Concrete states implement behavior loops (idle/patrol/chase/attack/battle/dead/etc.)
+The project uses a lightweight FSM (`EnemyStateMachine`) where:
+- Only one `EnemyState` is active at a time.
+- States are responsible for their own entry/exit behavior.
+- Transition logic stays explicit and readable.
 
-Melee and ranged archetypes both use the same FSM foundation.
+This is used by both:
+- `EnemyMelee`
+- `EnemyRange`
 
 ## 🎯 Purpose
-Keep AI logic modular and readable:
-- Add/replace behavior by adding a state class
-- Keep transitions explicit
-- Provide consistent hooks for animation-driven timing
+Provide a scalable architecture for enemy behavior without massive monolithic scripts:
+- Add new behaviors by creating new states
+- Keep each state focused (high cohesion)
+- Avoid spaghetti branching inside a single Update loop
 
 ## 🧠 Design Philosophy
-- **State-driven decisions**: avoid giant `Update()` condition chains.
-- **Animation as authority**: critical moments (attack hit frames, ability release frames) are synced via events.
-- **Archetype-owned FSM**: each enemy instance creates its own `EnemyStateMachine`.
+- **States are execution units**: each state does one job.
+- **Transitions are explicit**: states request transitions; the machine performs them.
+- **Enemy owns the machine**: archetypes construct their own states and decide how they connect.
 
 ## 📦 Core Responsibilities
-**Does**
-- Initialize a starting state (`Initialize()`)
-- Switch states (`ChangeState()`)
-- Provide a standard lifecycle to states (`Enter()`, `Update()`, `Exit()`)
-- Support animation timing callbacks (`AnimationTrigger()`, `AbilityTrigger()`)
+**EnemyStateMachine**
+- Holds `currentState`
+- Calls:
+  - `Enter()` once on transition
+  - `Update()` each frame
+  - `Exit()` once on transition
+- Exposes `ChangeState(newState)`
 
-**Does NOT**
-- Decide *which* states exist (archetypes construct their states)
-- Handle navigation/physics directly (states call into `Enemy`/archetype)
+**EnemyState**
+- Defines the behavior contract:
+  - `Enter()`
+  - `Update()`
+  - `Exit()`
+  - `AnimationTrigger()` (optional)
+  - `AbilityTrigger()` (optional)
 
-## 🧱 Key Components
-Classes
-- `EnemyStateMachine` (`code/Enemy/StateMachine/EnemyStateMachine.cs`)
-  - Holds `currentState`
-  - `Initialize(state)` and `ChangeState(state)`
-- `EnemyState` (`code/Enemy/StateMachine/EnemyState.cs`)
-  - Base class for states
-  - Stores references to `Enemy`, `EnemyStateMachine`, animator bool name
-  - Exposes `AnimationTrigger()` and `AbilityTrigger()` hooks
+## ⏱ Animation Timing Hooks
+States can receive animation events through `EnemyAnimationEvents`:
+- `AnimationTrigger()` (generic timing)
+- `AbilityTrigger()` (ability-specific timing)
+
+Ranged enemies use `AbilityTrigger()` to spawn grenades during the throw animation (`ThrowGrenadeState_Range`).
 
 ## 🔄 Execution Flow
-1. Archetype `Awake()` constructs states
-2. Archetype `Start()` calls `stateMachine.Initialize(startState)`
-3. Archetype `Update()` calls `stateMachine.currentState.Update()`
-4. Animation events call `Enemy.AnimationTrigger()` / `Enemy.AbilityTrigger()`
-   - Enemy forwards to `stateMachine.currentState.AnimationTrigger()` / `AbilityTrigger()`
-5. State calls `stateMachine.ChangeState(nextState)` as needed
+1. Archetype constructs states (usually in `Awake()`).
+2. Archetype starts the machine in an initial state (`IdleState_*`) in `Start()`.
+3. Each frame:
+  - Archetype calls `stateMachine.Update()`
+4. When a transition is needed:
+  - State calls `stateMachine.ChangeState(...)`
+5. Machine handles:
+  - `currentState.Exit()`
+  - swap
+  - `newState.Enter()`
 
 ## 🔗 Dependencies
-**Depends On**
-- `Enemy` (base archetype)
-- Unity Animator (state bool parameter convention)
+Depends On
+- `Enemy` archetypes to own and tick the machine
 
-**Used By**
-- Melee states (`code/Enemy/EnemyMelee/*State_Melee.cs`)
-- Ranged states (`code/Enemy/EnemyRange/*State_Range.cs`)
+Used By
+- `EnemyMelee`, `EnemyRange`
 
 ## ⚠ Constraints & Assumptions
-- The animator bool name is used to switch animation groups per-state (convention-driven).
-- Archetypes are responsible for ticking the FSM each frame.
-
-## 📈 Scalability & Extensibility
-- Add new timing hooks by extending the base `EnemyState` interface (e.g., `OnHitFrame()` if needed).
-- Add hierarchical states later if AI grows (not required yet).
+- States should not allocate or do expensive work per frame.
+- Expensive searches (cover scans, physics queries) should be throttled or cached.
 
 ## ✅ Development Status
-Stable
-
-## 📝 Notes
-- This FSM intentionally stays lightweight; behavior complexity lives inside states.
+In Development

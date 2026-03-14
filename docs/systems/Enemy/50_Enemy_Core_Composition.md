@@ -1,19 +1,20 @@
 ---
 title: "Enemy Core Composition"
-summary: "Base Enemy architecture shared by melee and ranged enemies: health, NavMesh, battle-mode trigger, pooling reset, and animation-event relays."
+summary: "Base Enemy architecture shared by melee and ranged enemies: health, NavMesh, perception + target memory, battle-mode trigger, pooling reset, and animation-event relays."
 order: 50
 status: "In Development"
-tags: ["Enemy", "AI", "Combat", "Pooling"]
-last_updated: "2026-03-05"
+tags: ["Enemy", "AI", "Combat", "Pooling", "Perception"]
+last_updated: "2026-03-14"
 ---
 
 ## 🧭 Overview
-`Enemy` is the base class for all enemy archetypes (currently: `EnemyMelee`, `EnemyRange`).
+`Enemy` is the shared base class for all enemy archetypes (currently: `EnemyMelee`, `EnemyRange`).
 
 It provides shared infrastructure:
-- Health + battle-mode detection
-- Navigation helpers (`NavMeshAgent`, steering/player facing)
-- FSM ownership (`EnemyStateMachine`) and animation-event relays
+- Health + battle-mode lifecycle (`EnterBattleMode()` / `ExitBattleMode()`)
+- **Perception + target memory** via the required `EnemyPerception` component
+- Navigation helpers (`NavMeshAgent`, steering/player facing helpers)
+- Animation-event relays (states receive `AnimationTrigger()` / `AbilityTrigger()` through `EnemyAnimationEvents`)
 - Pool-safe reset contract (`IPoolable` → `OnSpawnedFromPool()`)
 - Death effect composition hooks (`EnemyRagdoll`, `EnemyDeathDissolve`)
 
@@ -22,81 +23,81 @@ Keep common enemy concerns in one place so each archetype can focus on its *beha
 
 ## 🧠 Design Philosophy
 - **Inheritance for shared infrastructure**: `Enemy` owns references + reset contract; archetypes extend.
-- **State-driven behavior**: `Enemy` does not implement decisions; the FSM does.
-- **Animation-driven timing**: gameplay-critical timing is triggered via animation events and forwarded to the active state.
-- **Pool-safe by default**: enemies are expected to be reused via pooling, so reset is explicit.
+- **State-driven behavior**: `Enemy` does not implement an FSM; archetypes do.
+- **Perception as a shared layer**: visibility + memory is handled by `EnemyPerception`, keeping AI decisions consistent across types.
+- **Animation-driven timing**: gameplay-critical timing is triggered via animation events instead of hard-coded delays.
 
 ## 📦 Core Responsibilities
 **Does**
-- Cache common components (`Animator`, `NavMeshAgent`, `EnemyRagdoll`, `EnemyDeathDissolve`, `EnemyVisuals`).
-- Track health (`maxHealth`, `currentHealth`) and `inBattleMode`.
-- Detect aggression via `ShouldEnterBattleMode()` and call `EnterBattleMode()` once.
-- Provide facing helpers (`FacePlayer()`, `FaceSteeringTarget()`) and patrol target selection.
-- Relay animation hooks to the current state: `AnimationTrigger()` and `AbilityTrigger()`.
-- Reset the enemy for reuse through `IPoolable` (`OnSpawnedFromPool()` → `ResetEnemyForReuse()`).
+- Track health (`maxHealth`, `currentHealth`) and decrement on `GetHit()`
+- Tick perception each frame (`perception.TickPerception(inBattleMode)`)
+- Decide when to enter battle mode using **visibility-first** logic:
+   - `Enemy.ShouldEnterBattleMode()` checks `EnemyPerception.IsTargetVisible` when available
+- Provide shared helper queries used by states:
+   - `CanSeePlayer()`
+   - `HasRecentTargetKnowledge()`
+   - `GetKnownPlayerPosition()`
+- Refresh target memory when hit (`GetHit()` calls `perception.RegisterTargetKnowledge(...)`)
+- Provide movement helpers (`StopAgentImmediately()`, `FaceTarget()`, `FaceSteeringTarget()`)
 
 **Does NOT**
-- Define AI decisions or state transitions (owned by `EnemyStateMachine` + concrete `EnemyState` subclasses).
-- Implement concrete attacks/shooting logic (archetype-specific).
+- Define archetype-specific decisions (melee vs ranged tactics live in states)
+- Implement cover scoring (delegated to `EnemyCoverController` by ranged archetype)
+- Implement projectile logic (player bullets in `Bullet`, ranged enemy bullets in `EnemyBullet`)
 
 ## 🧱 Key Components
 Classes
-- `Enemy` (`code/Enemy/Enemy.cs`)
-- `EnemyStateMachine` (`code/Enemy/StateMachine/EnemyStateMachine.cs`)
-- `EnemyState` (`code/Enemy/StateMachine/EnemyState.cs`)
-
-Composition (attached on prefab)
-- `NavMeshAgent`
-- `Animator` (in child)
-- `EnemyRagdoll`
-- `EnemyDeathDissolve`
-- `EnemyVisuals`
+- `Enemy`
+   - Shared runtime state + perception integration
+- `EnemyPerception`
+   - Visibility, FOV rules, and last-seen memory
+- `EnemyRagdoll`, `EnemyDeathDissolve`
+   - Death presentation pipeline
+- `EnemyAnimationEvents`
+   - Animation-event bridge into the active `EnemyState`
 
 Interfaces / Data
-- `IPoolable` (`code/Object Pool/IPoolable.cs`)
+- `IPoolable`
+   - Standard pool reset hook (`OnSpawnedFromPool()`)
 
 ## 🔄 Execution Flow
-1. `Awake()`
-   - Initializes `currentHealth`
-   - Creates a per-enemy `EnemyStateMachine`
-   - Caches agent/anim/player/ragdoll/dissolve/visuals
+1. `Start()`
+   - Initializes patrol points
+   - Configures perception target with `perception.SetTarget(player)`
+
 2. `Update()`
-   - Runs battle-mode enter check (`ShouldEnterBattleMode()`)
-   - (FSM tick is done by subclasses)
-3. On hit (`GetHit()`)
-   - Enters battle mode
+   - Ticks perception every frame
+   - If `ShouldEnterBattleMode()` returns true → calls `EnterBattleMode()`
+   - (Archetypes tick their own state machine after base update)
+
+3. `GetHit()`
+   - Refreshes perception knowledge (last known threat position)
+   - Forces battle mode on hit
    - Decrements health
-4. Death impact (`DeathImpact()`)
-   - Applies delayed force to ragdoll rigidbody at hit point (timed to allow ragdoll enable)
-5. Pool reuse (`OnSpawnedFromPool()`)
-   - Resets health + flags
-   - Re-enables animator/agent, resets path
-   - Restores ragdoll/colliders
-   - Restores dissolve materials
-   - Calls `OnResetEnemyStateMachineForReuse()` for archetype-specific FSM reset
+
+4. Pool reuse
+   - `OnSpawnedFromPool()` restores baseline state and resets perception via `EnemyPerception.ResetPerception()` (through `ResetEnemyForReuse()`)
 
 ## 🔗 Dependencies
-**Depends On**
-- Unity: `NavMeshAgent`, `Animator`, `Coroutine`
-- `EnemyStateMachine` / `EnemyState`
-- `EnemyRagdoll`, `EnemyDeathDissolve`, `EnemyVisuals`
+Depends On
+- Unity: `NavMeshAgent`, `Animator`, physics
+- `EnemyPerception` (required component)
 
-**Used By**
+Used By
 - `EnemyMelee`, `EnemyRange`
-- `EnemyAnimationEvents` (forwards animation triggers)
-- `Bullet` (calls `GetHit()` + `DeathImpact()`)
+- `Bullet` / `EnemyBullet` (calls `GetHit()`, death impact hook)
 
 ## ⚠ Constraints & Assumptions
-- `player` is currently resolved via `GameObject.Find("Player")`.
-- `ResetEnemyForReuse()` assumes the agent is on a valid NavMesh; it guards with `agent.isOnNavMesh` before `ResetPath()`.
+- Battle-mode entry is visibility-driven when perception exists; if perception is missing (shouldn’t happen due to `RequireComponent`), fallback is distance check.
+- `GetHit()` currently decrements health by 1; damage scaling is not implemented here.
+- Perception memory duration is configured in `EnemyPerception`.
 
 ## 📈 Scalability & Extensibility
-- Add new archetypes by inheriting from `Enemy` and building states (e.g., `EnemySniper`, `EnemySummoner`).
-- Extend battle-mode logic to use perception/line-of-sight without changing the FSM contract.
-- Replace `GameObject.Find` with a proper player reference provider when you introduce multiple scenes/spawn flows.
+- New archetypes can reuse the same perception + battle-mode contract without duplicating detection logic.
+- Additional “knowledge sources” (sound, alerts, squad comms) can integrate via `EnemyPerception.RegisterTargetKnowledge(position)`.
 
 ## ✅ Development Status
 In Development
 
 ## 📝 Notes
-- In docs, classes are referenced as `Enemy` and functions as `ResetEnemyForReuse()`.
+See `57_Enemy_Perception_System.md` for the full visibility + memory model.

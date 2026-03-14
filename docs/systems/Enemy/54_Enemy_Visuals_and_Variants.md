@@ -1,87 +1,119 @@
 ---
 title: "Enemy Visuals & Variant Pipeline"
-summary: "Data-driven enemy look/weapon/corruption randomization, weapon model selection, animator overrides, and weapon trail control."
+summary: "Enemy presentation layer: randomized skins/weapons/corruption, weapon model selection, animation-layer overrides, weapon trails, and Animation Rigging (IK + aim) coordination."
 order: 54
 status: "In Development"
-tags: ["Enemy", "Visuals", "Variants", "Animation"]
-last_updated: "2026-03-05"
+tags: ["Enemy", "Visuals", "Variants", "Animation", "Rigging", "IK"]
+last_updated: "2026-03-14"
 ---
 
 ## 🧭 Overview
 Enemy variants are implemented by separating **gameplay logic** from **visual identity**:
+
 - AI/FSM stays in `EnemyMelee` / `EnemyRange`
 - Visual randomization + setup lives in `EnemyVisuals`
-- Weapon models act as "variant carriers" and can override animations and attack data
+- Weapon models act as “variant carriers” and can:
+    - expose compatibility rules
+    - provide animation overrides (layer index / optional override controller)
+    - provide weapon-specific targets (gun points, IK targets)
+    - toggle extra visuals (secondary model, grenade model, trails)
 
-This enables adding new variants primarily through *prefab setup + data assets*.
+This enables adding new variants primarily through **prefab setup + data assets**, without rewriting AI logic.
 
 ## 🎯 Purpose
-Allow enemies to spawn with variety without duplicating AI code:
+Keep enemy visuals scalable and data-driven:
 - Random skin/texture
-- Random weapon model (filtered by type)
+- Random compatible weapon model
 - Random corruption crystals
-- Variant-specific animator overrides (e.g., unarmed dodge attacks)
-- Weapon trail VFX control during attacks
+- Variant-specific animation configuration (e.g., unarmed dodge)
+- Weapon trails during attacks
+- Ranged combat readability (aim IK, secondary model swaps, grenade model)
 
 ## 🧠 Design Philosophy
-- **Per-instance material changes via MaterialPropertyBlock** (avoid material instancing).
-- **Weapon model = configuration hub**: optional animator override + data asset links.
-- **Pooling-friendly**: randomization should be safe to run on spawn/reuse.
+- **Single coordinator**: `EnemyVisuals` is the “one place” states talk to for visuals.
+- **Weapon models are modular**: each model is a self-contained visual package.
+- **Rigging is blended, not snapped**: IK weights can be smoothly enabled/disabled to avoid popping.
+- **Gameplay doesn’t depend on visuals**: visuals read from enemy state, but don’t own AI decisions.
 
 ## 📦 Core Responsibilities
 **Does**
-- Choose and apply a randomized visual setup
-- Select an appropriate `EnemyWeaponModel` based on enemy type/weapon category
-- Apply optional `AnimatorOverrideController` to the enemy animator
-- Toggle weapon trail VFX at attack timing
-- Enable a randomized subset of corruption crystals
+- Randomize look
+    - picks a texture from `colorTextures`
+    - applies it to the enemy mesh (`SkinnedMeshRenderer`)
+- Randomize corruption
+    - enables a subset of corruption crystal objects (per enemy spawn)
+- Select a compatible weapon model
+    - iterates through available `EnemyWeaponModel` instances
+    - activates a compatible one based on `EnemyWeaponModel.IsCompatibleWith(Enemy)`
+- Configure ranged weapon hardpoints + rigging
+    - `EnemyRangeWeaponModel.GunPoint` is used by `EnemyRange` to spawn bullets
+    - weapon models can provide left-hand / elbow IK targets when required
+- Coordinate combat visual toggles used by states
+    - weapon root on/off (`EnableWeaponModel`)
+    - secondary weapon root (`EnableSecondaryWeaponModel`) used for throw animations
+    - grenade model (`EnableGrenadeModel`) used during grenade throw state
+    - IK weights (`EnableIK`) used in ranged combat states
 
 **Does NOT**
-- Decide combat behavior (owned by the FSM)
-- Implement attack timing (owned by animation events + states)
+- Decide variant gameplay behavior (that lives in AI + perks)
+- Spawn projectiles or apply damage
 
 ## 🧱 Key Components
-Classes
+Core
 - `EnemyVisuals` (`code/Enemy/EnemyVisuals.cs`)
-- Weapon models
-  - `EnemyWeaponModel` (base) (`code/Enemy/EnemyWeaponModel.cs`)
-  - `EnemyMeleeWeaponModel` (`code/Enemy/EnemyMeleeWeaponModel.cs`)
-  - `EnemyRangeWeaponModel` (`code/Enemy/EnemyRangeWeaponModel.cs`)
-- Corruption
-  - `EnemyCorruptionCrystal` (`code/Enemy/EnemyCorruptionCrystal.cs`)
 
-Data
-- `EnemyMeleeWeaponData` (`code/Enemy/Data/EnemyMeleeWeaponData.cs`)
+Weapon model system
+- `EnemyWeaponModel` (base abstract visual model)
+- Melee-specific models
+    - `EnemyMeleeWeaponModel` (and subclasses) exposing melee weapon type rules
+- Ranged-specific models
+    - `EnemyRangeWeaponModel`
+        - `weaponType` + `AnimationLayerIndex`
+        - `GunPoint` used for bullets
+        - optional IK targets (left hand/elbow)
+        - `primaryVisualRoot` / `secondaryVisualRoot`
+    - `EnemySecondaryRangeWeaponModel` (marker to locate secondary model)
+- Optional VFX
+    - `WeaponTrail` / trail toggles used during attacks
+
+Rigging
+- Uses Unity Animation Rigging constraints (e.g., aim rig, left-hand IK rig)
+- `EnableIK(leftHand, aim)` is called by ranged states to keep aiming readable
 
 ## 🔄 Execution Flow
-1. Enemy spawns
-2. `EnemyVisuals` selects:
-   - Skin (texture via property block)
-   - Weapon model matching category (OneHand/Throw/Unarmed)
-   - Optional animator override
-   - Corruption crystals subset
-3. Combat states can query weapon model data to configure attack lists/turn speed
-4. Attack state toggles weapon trail on enter/exit (via weapon model)
+1. Spawn / reuse
+    - Enemy calls `EnemyVisuals.SetupLook()`
+    - Visuals:
+        - randomize texture
+        - select weapon model
+        - randomize corruption
+
+2. Combat states toggle readability
+    - Ranged:
+        - `BattleState_Range` enables IK (aim + left-hand if needed)
+        - `ThrowGrenadeState_Range` disables IK and swaps to secondary + grenade model
+    - Melee:
+        - trails and animator overrides can be enabled per weapon model / variant
 
 ## 🔗 Dependencies
-**Depends On**
-- Unity: `Renderer`, `MaterialPropertyBlock`, `AnimatorOverrideController`
-- Enemy archetype for filtering compatibility
+Depends On
+- Enemy prefab wiring (models, crystals, textures)
+- Unity Animation Rigging package (constraints + rigs)
 
-**Used By**
-- Enemy archetypes (`EnemyMelee`, `EnemyRange`) call visuals setup
-- Melee combat uses weapon model data overrides to set attack lists
+Used By
+- `EnemyMelee`, `EnemyRange`
+- Ranged states (IK + model swap coordination)
 
 ## ⚠ Constraints & Assumptions
-- Prefabs must include weapon model children/components and corruption crystal objects.
-- Animator override controllers must match the base controller parameters.
+- Weapon model compatibility must be correctly authored in prefabs (wrong compatibility ⇒ wrong visuals).
+- IK targets must exist for models that set `RequiresLeftHandIK = true`.
 
 ## 📈 Scalability & Extensibility
-- Add new variants by adding new weapon models and data assets.
-- Extend selection rules (rarity weighting, biome-based skins) without changing AI.
+- Add a new enemy variant by adding a new `EnemyWeaponModel` prefab child + compatibility rule.
+- Add new ranged weapons by:
+    - adding `EnemyRangeWeaponData` assets
+    - adding a matching `EnemyRangeWeaponModel` visual
+    - selecting via `EnemyRangeWeaponType`
 
 ## ✅ Development Status
 In Development
-
-## 📝 Notes
-- This doc corresponds to the pipeline introduced in Devlog 10.
