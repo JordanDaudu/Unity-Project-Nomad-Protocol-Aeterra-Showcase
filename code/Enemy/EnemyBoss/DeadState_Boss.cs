@@ -1,29 +1,30 @@
 using UnityEngine;
 
 /// <summary>
-/// Death state for ranged enemies.
+/// Death state for the boss.
 /// </summary>
 /// <remarks>
 /// Responsibilities:
-/// - Ensure grenade throw is resolved if the enemy dies mid-throw (avoids "lost grenade").
-/// - Disable Animator and NavMeshAgent so ragdoll owns the body.
-/// - Enable ragdoll and trigger dissolve effect.
-/// - After a short delay, disable ragdoll colliders to prevent further interactions.
+/// - Ensure active abilities are cleaned up (e.g., stop flamethrower) so pooled VFX aren't left running.
+/// - Notify global systems of the boss death (music, encounter systems, progression, etc.).
+/// - Disable Animator and NavMeshAgent so ragdoll fully owns the body.
+/// - Trigger dissolve visual and then disable ragdoll colliders after a short interaction window.
 /// </remarks>
-public class DeadState_Range : EnemyState
+public class DeadState_Boss : EnemyState
 {
     #region Runtime
 
-    private EnemyRange enemy;
+    private EnemyBoss enemy;
     private bool interactionDisabled;
 
     #endregion
 
-    #region Constructor
+    #region Construction
 
-    public DeadState_Range(Enemy enemyBase, EnemyStateMachine stateMachine, string animBoolName) : base(enemyBase, stateMachine, animBoolName)
+    public DeadState_Boss(Enemy enemyBase, EnemyStateMachine stateMachine, string animBoolName)
+        : base(enemyBase, stateMachine, animBoolName)
     {
-        enemy = enemyBase as EnemyRange;
+        enemy = enemyBase as EnemyBoss;
     }
 
     #endregion
@@ -34,10 +35,11 @@ public class DeadState_Range : EnemyState
     {
         base.Enter();
 
-        enemy.NotifyDeath();
+        // Safety: ensure flamethrower doesn't remain active after death.
+        enemy.abilityState.DisableFlameThrower();
 
-        if (enemy.throwGrenadeState.finishedThrowingGrenade == false)
-            enemy.ThrowGrenade();
+        // Used for systems like CombatMusicCoordinator / encounter logic.
+        enemy.NotifyDeath();
 
         // Disable animation/agent so ragdoll fully owns the body.
         enemy.anim.enabled = false;
@@ -46,17 +48,14 @@ public class DeadState_Range : EnemyState
         enemy.ragdoll.RagdollActive(true);
 
         interactionDisabled = false;
-        stateTimer = 1.5f; // Time before we disable colliders and interactions, allowing the initial death impact to play out
+
+        // Time before we disable colliders and interactions, allowing the initial death impact to play out.
+        stateTimer = 1.5f;
 
         if (enemy.deathDissolve != null)
             enemy.deathDissolve.PlayDeathDissolve();
         else
             Debug.LogWarning($"EnemyDeathDissolve missing on {enemy.name}", enemy);
-    }
-
-    public override void Exit()
-    {
-        base.Exit();
     }
 
     public override void Update()

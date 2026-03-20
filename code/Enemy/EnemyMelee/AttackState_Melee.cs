@@ -13,8 +13,8 @@ using UnityEngine;
 /// </summary>
 public class AttackState_Melee : EnemyState
 {
-    const float PLAYER_CLOSE_DISTANCE = 1.4f;
-    const int MAX_SLASH_ATTACK_INDEX = 5;
+    const float playerCloseDistance = 1.4f;
+    const int slashAttackAnimCount = 6;
 
     private const float MAX_ATTACK_DISTANCE = 50f;
 
@@ -42,7 +42,7 @@ public class AttackState_Melee : EnemyState
         enemy.anim.SetFloat("AttackIndex", enemy.attackData.attackIndex);
 
         // Randomizes a slash variant (Animator should use this to pick one of multiple slashes).
-        enemy.anim.SetFloat("SlashAttackIndex", Random.Range(0, MAX_SLASH_ATTACK_INDEX));
+        enemy.anim.SetFloat("SlashAttackIndex", Random.Range(0, slashAttackAnimCount));
 
         // Stop NavMesh movement during manual attack movement.
         enemy.agent.isStopped = true;
@@ -107,7 +107,7 @@ public class AttackState_Melee : EnemyState
         enemy.attackData = UpdatedAttackData();
     }
 
-    private bool PlayerClose() => Vector3.Distance(enemy.transform.position, enemy.player.position) <= PLAYER_CLOSE_DISTANCE;
+    private bool PlayerClose() => Vector3.Distance(enemy.transform.position, enemy.player.position) <= playerCloseDistance;
 
     private AttackData_EnemyMelee UpdatedAttackData()
     {

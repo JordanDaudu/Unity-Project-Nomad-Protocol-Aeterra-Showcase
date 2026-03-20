@@ -23,6 +23,7 @@ public class DeadState_Melee : EnemyState
     {
         base.Enter();
 
+        enemy.NotifyDeath();
         // Disable animation/agent so ragdoll fully owns the body.
         enemy.anim.enabled = false;
         enemy.agent.enabled = false;

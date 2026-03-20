@@ -12,7 +12,7 @@ public class IdleState_Range : EnemyState
 {
     #region Constants
 
-    private const int idleAnimVariationCount = 2; // Number of different idle animations to randomly choose from
+    private const int idleAnimVariationCount = 3; // Number of different idle animations to randomly choose from
 
     #endregion
 

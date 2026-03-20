@@ -23,6 +23,7 @@ public class Player : MonoBehaviour
     public PlayerWeaponController weapon { get; private set; }
     public PlayerWeaponVisuals weaponVisuals { get; private set; }
     public PlayerInteraction interaction { get; private set; }
+    public PlayerAbilityController abilities { get; private set; }
 
     #endregion
 
@@ -39,6 +40,7 @@ public class Player : MonoBehaviour
         weapon = GetComponent<PlayerWeaponController>();
         weaponVisuals = GetComponent<PlayerWeaponVisuals>();
         interaction = GetComponent<PlayerInteraction>();
+        abilities = GetComponent<PlayerAbilityController>();
 
         //Cursor.visible = false;
     }

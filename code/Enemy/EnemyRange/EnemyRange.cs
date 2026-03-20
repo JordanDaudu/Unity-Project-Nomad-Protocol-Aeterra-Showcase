@@ -248,10 +248,7 @@ public class EnemyRange : Enemy
     public override void EnterBattleMode()
     {
         if (inBattleMode)
-        {
-            Debug.LogWarning($"[{name}] Attempted to enter battle mode while already in battle mode. Ignoring.", this);
             return;
-        }
 
         StopAgentImmediately();
 

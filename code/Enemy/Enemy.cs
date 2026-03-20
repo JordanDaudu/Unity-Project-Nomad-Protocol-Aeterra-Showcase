@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.AI;
 using System.Collections;
@@ -19,6 +20,7 @@ using System.Collections;
 /// - Death visuals are composed via <see cref="EnemyRagdoll"/> + <see cref="EnemyDeathDissolve"/>.
 /// </summary>
 [RequireComponent(typeof(EnemyPerception))]
+[RequireComponent(typeof(NavMeshAgent))]
 public class Enemy : MonoBehaviour, IPoolable
 {
     #region Health
@@ -90,6 +92,17 @@ public class Enemy : MonoBehaviour, IPoolable
     /// </summary>
     public bool inBattleMode { get; private set; }
 
+    public bool IsDead => isDead;
+    private bool isDead;
+
+    #endregion
+
+    #region Events
+
+    public event Action<Enemy> BattleModeEntered;
+    public event Action<Enemy> BattleModeExited;
+    public event Action<Enemy> Died;
+
     #endregion
 
     #region Unity Callbacks
@@ -122,6 +135,9 @@ public class Enemy : MonoBehaviour, IPoolable
 
     protected virtual void Update()
     {
+        if (isDead)
+            return;
+
         perception?.TickPerception(inBattleMode);
 
         // Base enemy does not tick the state machine directly.
@@ -144,6 +160,9 @@ public class Enemy : MonoBehaviour, IPoolable
     /// </summary>
     protected bool ShouldEnterBattleMode()
     {
+        if (isDead)
+            return false;
+
         if (inBattleMode)
             return false;
 
@@ -155,12 +174,20 @@ public class Enemy : MonoBehaviour, IPoolable
 
     public virtual void EnterBattleMode()
     {
+        if (isDead || inBattleMode)
+            return;
+
         inBattleMode = true;
+        BattleModeEntered?.Invoke(this);
     }
 
     public virtual void ExitBattleMode()
     {
+        if (!inBattleMode)
+            return;
+
         inBattleMode = false;
+        BattleModeExited?.Invoke(this);
     }
 
     /// <summary>
@@ -169,6 +196,9 @@ public class Enemy : MonoBehaviour, IPoolable
     /// </summary>
     public virtual void GetHit()
     {
+        if (isDead)
+            return;
+
         if (perception != null && player != null)
         {
             Vector3 knownThreatPosition = player.position;
@@ -182,6 +212,22 @@ public class Enemy : MonoBehaviour, IPoolable
 
         EnterBattleMode();
         currentHealth--;
+    }
+
+    public void NotifyDeath()
+    {
+        if (isDead)
+            return;
+
+        isDead = true;
+
+        if (inBattleMode)
+        {
+            inBattleMode = false;
+            BattleModeExited?.Invoke(this);
+        }
+
+        Died?.Invoke(this);
     }
 
     /// <summary>
@@ -211,6 +257,30 @@ public class Enemy : MonoBehaviour, IPoolable
         return player.position;
     }
 
+    #endregion
+
+    #region NavMeshAgent Helpers
+
+    public bool HasReachedDestination(float extraTolerance = 0.05f)
+    {
+        if (agent == null || !agent.enabled || !agent.isOnNavMesh)
+        {
+            Debug.LogWarning($"[{name}] Cannot check HasReachedDestination: NavMeshAgent reference is missing, disabled, or not on NavMesh.", this);
+            return false;
+        }
+
+        if (agent.pathPending)
+            return false;
+
+        if (agent.pathStatus != NavMeshPathStatus.PathComplete)
+            return false;
+
+        if (agent.remainingDistance > agent.stoppingDistance + extraTolerance)
+            return false;
+
+        return !agent.hasPath || agent.velocity.sqrMagnitude < 0.01f;
+    }
+
     public void StopAgentImmediately()
     {
         if (agent == null)
@@ -227,7 +297,16 @@ public class Enemy : MonoBehaviour, IPoolable
 
     #region Facing Helpers
 
-    public void FaceTarget(Vector3 target)
+    /// <summary>
+    /// Rotates the object to face the specified target position, optionally using a smooth turning speed.
+    /// </summary>
+    /// <remarks>This method adjusts the object's rotation so that it faces the target position on the
+    /// horizontal plane. If the target is very close to the current position, no rotation occurs. Use a higher turn
+    /// speed for faster rotation, or 0 to use the default speed.</remarks>
+    /// <param name="target">The world position to face. Only the horizontal (XZ) components are considered; the Y component is ignored.</param>
+    /// <param name="turnSpeed">The speed at which the object turns toward the target, in degrees per second. If set to 0, the object's default
+    /// turn speed is used.</param>
+    public void FaceTarget(Vector3 target, float turnSpeed = 0)
     {
         Vector3 direction = target - transform.position;
         direction.y = 0f; // keep only horizontal rotation
@@ -235,13 +314,66 @@ public class Enemy : MonoBehaviour, IPoolable
         if (direction.sqrMagnitude < 0.0001f)
             return;
 
+        if (turnSpeed == 0)
+            turnSpeed = this.turnSpeed;
+
         Quaternion targetRotation = Quaternion.LookRotation(target - transform.position);
-
         Vector3 currentEulerAngles = transform.rotation.eulerAngles;
-
         float yRotation = Mathf.LerpAngle(currentEulerAngles.y, targetRotation.eulerAngles.y, turnSpeed * Time.deltaTime);
-
         transform.rotation = Quaternion.Euler(currentEulerAngles.x, yRotation, currentEulerAngles.z);
+    }
+
+    /// <summary>
+    /// Smoothly rotates the enemy toward a fixed world-space target position on the horizontal plane
+    /// until the turn is complete.
+    /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="FaceTarget(Vector3, float)"/>, this method is intended for a locked target
+    /// position captured once by the calling state, such as the player's position when entering a turn
+    /// or attack-preparation state.
+    ///
+    /// Pass the same <paramref name="target"/> each frame until this method returns true.
+    /// Once the enemy is facing the target within <paramref name="angleTolerance"/>, the method snaps
+    /// exactly to the final rotation and reports completion.
+    /// </remarks>
+    /// <param name="target">
+    /// The fixed world position to face. Only horizontal rotation is applied; vertical difference is ignored.
+    /// </param>
+    /// <param name="turnSpeed">
+    /// Rotation speed in degrees per second. If set to 0 or less, the enemy's default <see cref="turnSpeed"/>
+    /// value is used.
+    /// </param>
+    /// <param name="angleTolerance">
+    /// The angle, in degrees, at which the turn is considered complete.
+    /// </param>
+    /// <returns>
+    /// True if the enemy has finished turning toward the target; otherwise false.
+    /// </returns>
+    public bool TurnToTargetSmooth(Vector3 target, float turnSpeed = 0f, float angleTolerance = 2f)
+    {
+        Vector3 direction = target - transform.position;
+        direction.y = 0f;
+
+        if (direction.sqrMagnitude < 0.0001f)
+            return true;
+
+        if (turnSpeed <= 0f)
+            turnSpeed = this.turnSpeed;
+
+        Quaternion targetRotation = Quaternion.LookRotation(direction);
+
+        transform.rotation = Quaternion.RotateTowards(
+            transform.rotation,
+            targetRotation,
+            turnSpeed * Time.deltaTime);
+
+        if (Quaternion.Angle(transform.rotation, targetRotation) <= angleTolerance)
+        {
+            transform.rotation = targetRotation;
+            return true;
+        }
+
+        return false;
     }
 
     public void FaceSteeringTarget()
@@ -255,8 +387,57 @@ public class Enemy : MonoBehaviour, IPoolable
         FaceTarget(agent.steeringTarget);
     }
 
-    public void FacePlayer() => FaceTarget(player.position);
-    public void FaceKnownPlayerPosition() => FaceTarget(GetKnownPlayerPosition());
+    public void FacePlayer(float turnSpeed = 0) => FaceTarget(player.position, turnSpeed);
+    public void FaceKnownPlayerPosition(float turnSpeed = 0) => FaceTarget(GetKnownPlayerPosition(), turnSpeed);
+
+    public bool TurnToPlayerSmooth(float turnSpeed = 0f, float angleTolerance = 2f)
+    {
+        return TurnToTargetSmooth(player.position, turnSpeed, angleTolerance);
+    }
+
+    public bool TurnToKnownPlayerPositionSmooth(float turnSpeed = 0f, float angleTolerance = 2f)
+    {
+        return TurnToTargetSmooth(GetKnownPlayerPosition(), turnSpeed, angleTolerance);
+    }
+
+    /// <summary>
+    /// Returns the unsigned horizontal angle, in degrees, between the enemy's forward direction
+    /// and the direction toward the specified target position.
+    /// </summary>
+    /// <param name="target">
+    /// The world position to compare against. Vertical difference is ignored.
+    /// </param>
+    /// <returns>
+    /// The horizontal angle from the enemy's current forward direction to the target.
+    /// Returns 0 if the target is extremely close to the enemy.
+    /// </returns>
+    public float GetAngleToTarget(Vector3 target)
+    {
+        Vector3 direction = target - transform.position;
+        direction.y = 0f;
+
+        if (direction.sqrMagnitude < 0.0001f)
+            return 0f;
+
+        return Vector3.Angle(transform.forward, direction.normalized);
+    }
+
+    /// <summary>
+    /// Returns whether the enemy is facing the specified target position within a maximum horizontal angle.
+    /// </summary>
+    /// <param name="target">
+    /// The world position to test against. Vertical difference is ignored.
+    /// </param>
+    /// <param name="maxAngle">
+    /// The maximum allowed horizontal angle, in degrees, for the target to be considered in front of the enemy.
+    /// </param>
+    /// <returns>
+    /// True if the enemy is facing the target within <paramref name="maxAngle"/>; otherwise false.
+    /// </returns>
+    public bool IsFacingTarget(Vector3 target, float maxAngle)
+    {
+        return GetAngleToTarget(target) <= maxAngle;
+    }
 
     #endregion
 
@@ -276,6 +457,8 @@ public class Enemy : MonoBehaviour, IPoolable
     public virtual void OnReturnedToPool()
     {
         // Optional: cleanup if needed (stop sounds, particles, etc.)
+        if (inBattleMode)
+            ExitBattleMode();
     }
 
 
@@ -287,6 +470,7 @@ public class Enemy : MonoBehaviour, IPoolable
     {
         // Core gameplay state
         currentHealth = maxHealth;
+        isDead = false;
         inBattleMode = false;
 
         // Animation flags
@@ -334,7 +518,7 @@ public class Enemy : MonoBehaviour, IPoolable
     /// </summary>
     protected virtual void OnResetEnemyStateMachineForReuse()
     {
-
+        Debug.LogWarning($"[{name}] OnResetEnemyStateMachineForReuse not overridden in subclass. Make sure to reset the FSM to a valid alive state (e.g., Idle).", this);
     }
 
     #endregion
@@ -368,6 +552,11 @@ public class Enemy : MonoBehaviour, IPoolable
     #region Patrol logic
     public Vector3 GetPatrolDestination()
     {
+        if (patrolPointsPosition == null || patrolPointsPosition.Length == 0)
+        {
+            Debug.LogWarning($"[{name}] No patrol points assigned. Ensure patrol points are set up in the inspector.", this);
+            return transform.position;
+        }
         Vector3 destination = patrolPointsPosition[currentPatrolIndex];
 
         currentPatrolIndex++;

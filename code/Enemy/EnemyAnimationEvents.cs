@@ -35,4 +35,6 @@ public class EnemyAnimationEvents : MonoBehaviour
         enemy.visuals.EnableWeaponModel(true);
         enemy.visuals.EnableSecondaryWeaponModel(false);
     }
+
+    public void BossJumpImpact() => (enemy as EnemyBoss)?.JumpImpact();
 }
