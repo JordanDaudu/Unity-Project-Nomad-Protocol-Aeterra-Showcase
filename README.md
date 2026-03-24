@@ -1,6 +1,6 @@
 # Nomad Protocol: AETERRA — Showcase Repository (Unity / C#)
 
-🌐 **Project site / devlogs:** https://nomad-protocol-aeterra-website.onrender.com/  
+🌐 **Project site / devlogs:** https://nomad-protocol-aeterra.onrender.com/  
 💼 **LinkedIn:** https://www.linkedin.com/in/jordan-daudu-cpp-python-java/  
 ✉️ **Email:** jordandaudu@gmail.com  
 
