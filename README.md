@@ -10,9 +10,9 @@ This repository is a **public showcase version** of my Unity project **Nomad Pro
 
 It intentionally contains **only curated, safe-to-share content** (primarily **C# scripts** and **documentation/devlogs**) and does **not** include the full Unity project, art/audio assets, scenes, prefabs, or other files that would allow cloning and running the complete game.
 
-<img align="right" alt="GIF" src="Media/12_7" />
-
 **Status:** Actively in development 🚧
+
+<img align="right" alt="Media" src="Media/00.gif" />
 
 ---
 
